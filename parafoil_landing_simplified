@@ -1,0 +1,103 @@
+import jax
+import jax.numpy as jnp
+import equinox as eqx
+from typing import Dict, Callable
+
+# -------------------------
+# 3DOF Parafoil
+# -------------------------
+class JannParafoil3DOF(eqx.Module):
+    params: Dict
+    wind_params: Dict
+    state_dim: int = 3  # x, y, z
+
+    def __init__(self, params: Dict, wind_params: Dict):
+        super().__init__()
+        self.params = params
+        self.wind_params = wind_params
+
+    def __call__(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        return self.dynamics_func(x, u)
+
+    def dynamics_func(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        x_pos, y_pos, z_pos = x
+        u_ref = self.wind_params.get("u_ref", 2.0)
+        v_wind = self.wind_params.get("v_ref", 0.0)
+        dx = jnp.array([
+            u_ref + u,  # x-dot
+            v_wind,     # y-dot
+            -0.5        # z-dot (descent)
+        ])
+        return dx
+
+
+# -------------------------
+# 4DOF Parafoil (simplified)
+# -------------------------
+class JannParafoil4DOF(eqx.Module):
+    params: Dict
+    wind_params: Dict
+    state_dim: int = 4  # x, y, z, psi
+
+    def __init__(self, params: Dict, wind_params: Dict):
+        super().__init__()
+        self.params = params
+        self.wind_params = wind_params
+
+    def __call__(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        return self.dynamics_func(x, u)
+
+    def dynamics_func(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        x_pos, y_pos, z_pos, psi = x
+        u_ref = self.wind_params.get("u_ref", 2.0)
+        v_wind = self.wind_params.get("v_ref", 0.0)
+        K_psi = self.params.get("K_psi", 0.5)
+        dx = jnp.array([
+            u_ref + u,
+            v_wind,
+            -0.5,
+            K_psi * u  # simple heading control
+        ])
+        return dx
+
+
+# -------------------------
+# Example 6DOF Parafoil (Slegers)
+# -------------------------
+class SlegersParafoil6DOF(eqx.Module):
+    params: Dict
+    wind_params: Dict
+    state_dim: int = 6  # x, y, z, vx, vy, vz
+
+    def __init__(self, params: Dict, wind_params: Dict):
+        super().__init__()
+        self.params = params
+        self.wind_params = wind_params
+
+    def __call__(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        return self.dynamics_func(x, u)
+
+    def dynamics_func(self, x: jnp.ndarray, u: float) -> jnp.ndarray:
+        x_pos, y_pos, z_pos, vx, vy, vz = x
+        u_ref = self.wind_params.get("u_ref", 2.0)
+        v_wind = self.wind_params.get("v_ref", 0.0)
+        dx = jnp.array([
+            vx,
+            vy,
+            vz,
+            u_ref + u - 0.1 * vx,  # simple damping
+            v_wind - 0.1 * vy,
+            -0.5 - 0.1 * vz        # descent + damping
+        ])
+        return dx
+
+
+# -------------------------
+# Continuous parameterized wind field
+# -------------------------
+def wind_vector_field(z: float, wind_params: Dict) -> jnp.ndarray:
+    """Continuous wind profile: linear with altitude, optional stochastic"""
+    u_ref = wind_params.get("u_ref", 2.0)
+    v_ref = wind_params.get("v_ref", 0.0)
+    h_scale = wind_params.get("h_scale", 100.0)
+    return jnp.array([u_ref * (1 - jnp.exp(-z / h_scale)), v_ref])
